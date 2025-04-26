@@ -1,10 +1,8 @@
 const std = @import("std");
 
 pub const Instruction = union(enum) {
-    increment_value,
-    decrement_value,
-    increment_pointer,
-    decrement_pointer,
+    increment_value: u8,
+    increment_pointer: usize,
     write_value,
     read_value,
     loop_start: struct { end: usize },
@@ -55,9 +53,9 @@ pub const Runtime = struct {
         var rt = Runtime.init(
             allocator,
             &.{
-                .increment_value,
-                .increment_pointer,
-                .decrement_value,
+                .{ .increment_value = 1 },
+                .{ .increment_pointer = 1 },
+                .{ .increment_value = 255 },
             },
             wbuf.writer().any(),
             rbuf.reader().any(),
@@ -70,19 +68,12 @@ pub const Runtime = struct {
 
     inline fn next(self: *Runtime, instruction: Instruction) !void {
         switch (instruction) {
-            .increment_value => {
+            .increment_value => |n| {
                 try self.extendMemory();
-                self.memory.items[self.pointer] +%= 1;
+                self.memory.items[self.pointer] +%= n;
             },
-            .decrement_value => {
-                try self.extendMemory();
-                self.memory.items[self.pointer] -%= 1;
-            },
-            .increment_pointer => {
-                self.pointer += 1;
-            },
-            .decrement_pointer => {
-                self.pointer -= 1;
+            .increment_pointer => |n| {
+                self.pointer +%= n;
             },
             .write_value => {
                 try self.extendMemory();
@@ -117,28 +108,48 @@ pub fn parse(allocator: std.mem.Allocator, source: []const u8) ![]const Instruct
     var loop_start_stack = std.ArrayList(usize).init(allocator);
     defer loop_start_stack.deinit();
     for (source) |char| {
-        const instruction: ?Instruction = switch (char) {
-            '+' => .increment_value,
-            '-' => .decrement_value,
-            '>' => .increment_pointer,
-            '<' => .decrement_pointer,
-            '.' => .write_value,
-            ',' => .read_value,
-            '[' => b: {
-                try loop_start_stack.append(instructions.items.len);
-                break :b .{ .loop_start = .{ .end = 0 } };
+        const previous = if (instructions.items.len == 0) null else &instructions.items[instructions.items.len - 1];
+        switch (char) {
+            '+' => {
+                if (previous) |prev| switch (prev.*) {
+                    .increment_value => |*n| n.* +%= 1,
+                    else => try instructions.append(.{ .increment_value = 1 }),
+                } else try instructions.append(.{ .increment_value = 1 });
             },
-            ']' => b: {
+            '-' => {
+                if (previous) |prev| switch (prev.*) {
+                    .increment_value => |*n| n.* -%= 1,
+                    else => try instructions.append(.{ .increment_value = std.math.maxInt(u8) }),
+                } else try instructions.append(.{ .increment_value = std.math.maxInt(u8) });
+            },
+            '>' => {
+                if (previous) |prev| switch (prev.*) {
+                    .increment_pointer => |*n| n.* +%= 1,
+                    else => try instructions.append(.{ .increment_pointer = 1 }),
+                } else try instructions.append(.{ .increment_pointer = 1 });
+            },
+            '<' => {
+                if (previous) |prev| switch (prev.*) {
+                    .increment_pointer => |*n| n.* -%= 1,
+                    else => try instructions.append(.{ .increment_pointer = std.math.maxInt(usize) }),
+                } else try instructions.append(.{ .increment_pointer = std.math.maxInt(usize) });
+            },
+            '.' => try instructions.append(.write_value),
+            ',' => try instructions.append(.read_value),
+            '[' => {
+                try loop_start_stack.append(instructions.items.len);
+                try instructions.append(.{ .loop_start = .{ .end = 0 } });
+            },
+            ']' => {
                 const start = loop_start_stack.pop().?;
                 switch (instructions.items[start]) {
                     .loop_start => |*args| args.end = instructions.items.len,
                     else => unreachable,
                 }
-                break :b .{ .loop_end = .{ .start = start } };
+                try instructions.append(.{ .loop_end = .{ .start = start } });
             },
-            else => null,
-        };
-        if (instruction) |i| try instructions.append(i);
+            else => {},
+        }
     }
 
     return try instructions.toOwnedSlice();
@@ -148,16 +159,15 @@ test parse {
     const allocator = std.testing.allocator;
 
     const expected: []const Instruction = &.{
-        .increment_value,
-        .decrement_value,
-        .increment_pointer,
-        .decrement_pointer,
-        .{ .loop_start = .{ .end = 7 } },
+        .{ .increment_value = 2 },
+        .{ .increment_pointer = 2 },
+        .{ .loop_start = .{ .end = 5 } },
         .write_value,
         .read_value,
-        .{ .loop_end = .{ .start = 4 } },
+        .{ .loop_end = .{ .start = 2 } },
+        .{ .increment_value = 255 },
     };
-    const actual = try parse(allocator, "+-><[.,]");
+    const actual = try parse(allocator, "++><<>>>[.,]++---");
     defer allocator.free(actual);
     try std.testing.expectEqualSlices(Instruction, expected, actual);
 }
