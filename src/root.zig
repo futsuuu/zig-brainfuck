@@ -11,30 +11,15 @@ pub const Instruction = union(enum) {
 
 pub const Runtime = struct {
     instructions: []const Instruction,
-    index: usize,
+    index: usize = 0,
 
-    memory: [MEMORY_SIZE]u8,
-    pointer: usize,
+    memory: [MEMORY_SIZE]u8 = [_]u8{0} ** MEMORY_SIZE,
+    pointer: usize = 0,
 
     writer: std.io.AnyWriter,
     reader: std.io.AnyReader,
 
     const MEMORY_SIZE: usize = 30000;
-
-    pub fn new(
-        instructions: []const Instruction,
-        writer: std.io.AnyWriter,
-        reader: std.io.AnyReader,
-    ) Runtime {
-        return .{
-            .instructions = instructions,
-            .index = 0,
-            .memory = [_]u8{0} ** MEMORY_SIZE,
-            .pointer = 0,
-            .writer = writer,
-            .reader = reader,
-        };
-    }
 
     pub fn execute(self: *Runtime) !void {
         while (getItem(Instruction, self.instructions, self.index)) |instruction| : (self.index += 1) {
@@ -47,15 +32,15 @@ pub const Runtime = struct {
         var wbuf = std.ArrayList(u8).init(allocator);
         defer wbuf.deinit();
         var rbuf = std.io.fixedBufferStream("");
-        var rt = Runtime.new(
-            &.{
+        var rt = Runtime{
+            .instructions = &.{
                 .{ .increment_value = 1 },
                 .{ .increment_pointer = 1 },
                 .{ .increment_value = 255 },
             },
-            wbuf.writer().any(),
-            rbuf.reader().any(),
-        );
+            .writer = wbuf.writer().any(),
+            .reader = rbuf.reader().any(),
+        };
         try rt.execute();
         try std.testing.expectEqual(rt.memory[0], 1);
         try std.testing.expectEqual(rt.memory[1], 255);
