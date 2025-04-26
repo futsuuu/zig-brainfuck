@@ -13,6 +13,7 @@ pub fn main() !void {
     const file = try std.fs.cwd().openFileZ(input, .{});
     defer file.close();
     const source = try file.readToEndAlloc(allocator, std.math.maxInt(usize));
+    defer allocator.free(source);
     const instructions = try brainfuck.parse(allocator, source);
     defer allocator.free(instructions);
 
