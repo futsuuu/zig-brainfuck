@@ -16,13 +16,11 @@ pub fn main() !void {
     const instructions = try brainfuck.parse(allocator, source);
     defer allocator.free(instructions);
 
-    var runtime = brainfuck.Runtime.init(
-        allocator,
+    var runtime = brainfuck.Runtime.new(
         instructions,
         std.io.getStdOut().writer().any(),
         std.io.getStdIn().reader().any(),
     );
-    defer runtime.deinit();
 
     try runtime.execute();
 }

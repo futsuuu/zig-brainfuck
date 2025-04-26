@@ -13,14 +13,15 @@ pub const Runtime = struct {
     instructions: []const Instruction,
     index: usize,
 
-    memory: std.ArrayList(u8),
+    memory: [MEMORY_SIZE]u8,
     pointer: usize,
 
     writer: std.io.AnyWriter,
     reader: std.io.AnyReader,
 
-    pub fn init(
-        allocator: std.mem.Allocator,
+    const MEMORY_SIZE: usize = 30000;
+
+    pub fn new(
         instructions: []const Instruction,
         writer: std.io.AnyWriter,
         reader: std.io.AnyReader,
@@ -28,15 +29,11 @@ pub const Runtime = struct {
         return .{
             .instructions = instructions,
             .index = 0,
-            .memory = .init(allocator),
+            .memory = [_]u8{0} ** MEMORY_SIZE,
             .pointer = 0,
             .writer = writer,
             .reader = reader,
         };
-    }
-
-    pub fn deinit(self: Runtime) void {
-        self.memory.deinit();
     }
 
     pub fn execute(self: *Runtime) !void {
@@ -50,8 +47,7 @@ pub const Runtime = struct {
         var wbuf = std.ArrayList(u8).init(allocator);
         defer wbuf.deinit();
         var rbuf = std.io.fixedBufferStream("");
-        var rt = Runtime.init(
-            allocator,
+        var rt = Runtime.new(
             &.{
                 .{ .increment_value = 1 },
                 .{ .increment_pointer = 1 },
@@ -60,43 +56,31 @@ pub const Runtime = struct {
             wbuf.writer().any(),
             rbuf.reader().any(),
         );
-        defer rt.deinit();
         try rt.execute();
-        try std.testing.expectEqual(rt.memory.items[0], 1);
-        try std.testing.expectEqual(rt.memory.items[1], 255);
+        try std.testing.expectEqual(rt.memory[0], 1);
+        try std.testing.expectEqual(rt.memory[1], 255);
     }
 
     inline fn next(self: *Runtime, instruction: Instruction) !void {
         switch (instruction) {
             .increment_value => |n| {
-                try self.extendMemory();
-                self.memory.items[self.pointer] +%= n;
+                self.memory[self.pointer] +%= n;
             },
             .increment_pointer => |n| {
                 self.pointer +%= n;
             },
             .write_value => {
-                try self.extendMemory();
-                try self.writer.writeByte(self.memory.items[self.pointer]);
+                try self.writer.writeByte(self.memory[self.pointer]);
             },
             .read_value => {
-                try self.extendMemory();
-                self.memory.items[self.pointer] = try self.reader.readByte();
+                self.memory[self.pointer] = try self.reader.readByte();
             },
             .loop_start => |args| {
-                try self.extendMemory();
-                if (self.memory.items[self.pointer] == 0) self.index = args.end;
+                if (self.memory[self.pointer] == 0) self.index = args.end;
             },
             .loop_end => |args| {
-                try self.extendMemory();
-                if (self.memory.items[self.pointer] != 0) self.index = args.start;
+                if (self.memory[self.pointer] != 0) self.index = args.start;
             },
-        }
-    }
-
-    inline fn extendMemory(self: *Runtime) !void {
-        if (self.memory.items.len <= self.pointer) {
-            try self.memory.appendNTimes(0, self.pointer + 1 - self.memory.items.len);
         }
     }
 };
