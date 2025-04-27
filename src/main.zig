@@ -8,7 +8,10 @@ pub fn main() !void {
     var args = try std.process.argsWithAllocator(allocator);
     defer args.deinit();
     _ = args.skip();
-    const input = args.next().?;
+    const input = args.next() orelse {
+        std.debug.print("file not specified\n", .{});
+        return error.MissingCliOption;
+    };
 
     const file = try std.fs.cwd().openFileZ(input, .{});
     defer file.close();
