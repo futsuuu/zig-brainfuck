@@ -60,11 +60,11 @@ pub const Runtime = struct {
             .read_value => {
                 self.memory[self.pointer] = try self.reader.readByte();
             },
-            .loop_start => |args| {
-                if (self.memory[self.pointer] == 0) self.index = args.end;
+            .loop_start => |loop| {
+                if (self.memory[self.pointer] == 0) self.index = loop.end;
             },
-            .loop_end => |args| {
-                if (self.memory[self.pointer] != 0) self.index = args.start;
+            .loop_end => |loop| {
+                if (self.memory[self.pointer] != 0) self.index = loop.start;
             },
         }
     }
@@ -79,42 +79,60 @@ pub fn parse(allocator: std.mem.Allocator, source: []const u8) ![]const Instruct
     for (source) |char| {
         const previous = if (instructions.items.len == 0) null else &instructions.items[instructions.items.len - 1];
         switch (char) {
-            '+' => {
+            '+' => b: {
                 if (previous) |prev| switch (prev.*) {
-                    .increment_value => |*n| n.* +%= 1,
-                    else => try instructions.append(.{ .increment_value = 1 }),
-                } else try instructions.append(.{ .increment_value = 1 });
+                    .increment_value => |*n| {
+                        n.* +%= 1;
+                        break :b;
+                    },
+                    else => {},
+                };
+                try instructions.append(.{ .increment_value = 1 });
             },
-            '-' => {
+            '-' => b: {
                 if (previous) |prev| switch (prev.*) {
-                    .increment_value => |*n| n.* -%= 1,
-                    else => try instructions.append(.{ .increment_value = std.math.maxInt(u8) }),
-                } else try instructions.append(.{ .increment_value = std.math.maxInt(u8) });
+                    .increment_value => |*n| {
+                        n.* -%= 1;
+                        break :b;
+                    },
+                    else => {},
+                };
+                try instructions.append(.{ .increment_value = std.math.maxInt(u8) });
             },
-            '>' => {
+            '>' => b: {
                 if (previous) |prev| switch (prev.*) {
-                    .increment_pointer => |*n| n.* +%= 1,
-                    else => try instructions.append(.{ .increment_pointer = 1 }),
-                } else try instructions.append(.{ .increment_pointer = 1 });
+                    .increment_pointer => |*n| {
+                        n.* +%= 1;
+                        break :b;
+                    },
+                    else => {},
+                };
+                try instructions.append(.{ .increment_pointer = 1 });
             },
-            '<' => {
+            '<' => b: {
                 if (previous) |prev| switch (prev.*) {
-                    .increment_pointer => |*n| n.* -%= 1,
-                    else => try instructions.append(.{ .increment_pointer = std.math.maxInt(usize) }),
-                } else try instructions.append(.{ .increment_pointer = std.math.maxInt(usize) });
+                    .increment_pointer => |*n| {
+                        n.* -%= 1;
+                        break :b;
+                    },
+                    else => {},
+                };
+                try instructions.append(.{ .increment_pointer = std.math.maxInt(usize) });
             },
-            '.' => try instructions.append(.write_value),
-            ',' => try instructions.append(.read_value),
+            '.' => {
+                try instructions.append(.write_value);
+            },
+            ',' => {
+                try instructions.append(.read_value);
+            },
             '[' => {
                 try loop_start_stack.append(instructions.items.len);
                 try instructions.append(.{ .loop_start = .{ .end = 0 } });
             },
             ']' => {
                 const start = loop_start_stack.pop().?;
-                switch (instructions.items[start]) {
-                    .loop_start => |*args| args.end = instructions.items.len,
-                    else => unreachable,
-                }
+                const end = instructions.items.len;
+                instructions.items[start].loop_start.end = end;
                 try instructions.append(.{ .loop_end = .{ .start = start } });
             },
             else => {},
